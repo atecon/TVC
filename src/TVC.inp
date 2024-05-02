@@ -1,0 +1,338 @@
+function scalar Crit (matrix *g "variance ratios",
+                      const matrix X "observations",
+                      const matrix XX "matrix X'X",
+                      const matrix y "vector of dependent variable",
+                      const matrix Xy "right-hand side of normal equation",
+                      const matrix P "difference matrix",
+                      const scalar T "number of observations",
+                      const scalar n "number of regressors",
+                      const bool like "likelihood")
+    # This gives the negatively signed criterion function (equations 3.12 for
+    # likelihood and 3.13 for moments estimation), stripped of constants and
+    # re-parametrized in terms of variance ratios and the sum of squares Q
+    # instead of variances, using equation 3.9 -- see Appendix B in the
+    # documentation. Default is moments estimation. Likelihood estimation
+    # is performed if the flag "like" is true.
+
+    matrix M =XX
+    matrix G=zeros(n,n)
+    G[diag]= 1 ./ g
+    G=I(T-1)**G
+    matrix M += qform(P',G)
+
+    matrix a=M \ Xy
+    matrix u=y-X*a
+    matrix v=P*a
+
+    # Construct criterion, as in equation (3.13), but negatively signed
+    # because a maximization (rather than a minimization) routine is
+    # employed.
+
+    if like
+        M = qform(P,M)
+    endif
+
+    scalar crit = -ldet(M)-(T-1)*sum(log(g))-(T-n*!like)*log(u'u+qform(v',G))
+
+    # step monitor prints current state of calculations
+    printf "Variance ratios: "
+    loop i=1..n
+        printf "%10g ",g[i]
+    endloop
+    printf "           \r"
+    flush
+
+    return crit
+end function
+
+function matrix vector2matrix (matrix a,
+                               list L,
+                               string prefix)
+    # write vector of coefficients a to matrix
+    scalar n = nelem(L)-1
+    scalar T = rows(a)/n
+    matrix A= zeros(T,n)
+    loop i=1..(T)
+        loop j = n-1..0 --decr
+            A[i,n-j] = a[n*i-j]
+        endloop
+    endloop
+    return A
+end function
+
+function matrix makeX (const matrix x "regressor matrix",
+                       const scalar T "number of obs")
+    # create matrix X, see section 2.3
+    matrix X = {}
+    loop i=1..T
+        X=diagcat(X,x[i,])
+    endloop
+    return X
+end function
+
+function matrix makeP (const scalar T "number of observations",
+                       const scalar n "number of regressors")
+    # create matrix P, see section 2.3
+    matrix p=zeros(T-1,T)
+    loop i=1..(T-1)
+        p[i,i]=-1
+        p[i,i+1]=1
+    endloop
+    matrix P = p**I(n)
+    return P
+end function
+
+function matrix makeBounds (matrix *g,
+                            const scalar n)
+    #
+    # This function creates a matrix "bounds" that that gives
+    # rows {i,lb, ub} for each regressor where i is the index
+    # of the regressor, lb is the lower bound for the coefficient
+    # of the regressor i and ub gives its upper bound of regressor.
+    # the matrix is used by the BFGScmax function.
+
+    if rows(g)!=n
+        # check if number of rows of g equals the number of regressors.
+        printf "number of initial variance ratios must be equal to the number"
+        printf "\nof regressors. Please correct.\n\n"
+        funcerr
+    endif
+
+    # Determine the matrix bounds using g
+
+    matrix bounds = {}
+    loop i=1..n
+        if g[i,1]>0
+            bounds |={i,0,$huge}
+        elif g[i,1] ==0
+            bounds |={i,1e-7,1e-7}
+            g[i,1]=1e-7
+        elif g[i,1]<0
+            bounds |={i,-g[i,1],-g[i,1]}
+            g[i,1]=-g[i,1]
+        endif
+    endloop
+    return bounds
+end function
+
+function scalar LogLike (const matrix x "regressor matrix",
+                         const matrix y "dependent variable",
+                         const matrix X "big regressor matrix",
+                         const matrix P "lag matrix",
+                         const matrix g "variance ratios",
+                         const matrix ava "average coefficients",
+                         const scalar s "variance")
+    # computes the log-likelihood function eq. (3.10)
+    scalar T=rows(x)
+    scalar n=cols(x)
+    matrix G=zeros(n,n)
+    G[diag]= g
+    G=I(T-1)**G
+    matrix W=X*P'*inv(P*P')
+    W=s*(qform(W,G)+I(T))
+    scalar LL=-(1/2)*(T*(log(2)+log($pi))+ldet(W))
+    LL += -(1/2)*(y-x*ava)'*inv(W)*(y-x*ava)
+    return LL
+end function
+
+
+function list TVCestimate (series S "dependent variable",
+                           list L "regressors",
+                           matrix ratios[auto] "vector of variance ratios",
+                           bool plt[1] "plot result",
+                           bool like[0] "likelihood instead of moments estimation")
+    set verbose off
+
+    L = S L
+
+    if sum(missing(L))
+        printf "\nSome observations have missing values. \nPlease correct.\n\n"
+        funcerr
+    endif
+
+    # Symbols correspond to the symbols used in in Schlicht (2021),
+    # Journal of the Korean Statistical  Society 50, 1164–1196.
+    # URL: https://doi.org/10.1007/s42952-021-00110-y
+    # Bracketed numbers in comments refer to equation numbers therein.
+
+    matrix y = {L[1]}
+    matrix x = (nelem(L)==2 ? {L[2]} : {L[2:]})
+    scalar T = rows(x)
+    scalar n = cols(x)
+
+    if !exists(ratios)
+        matrix g = ones(n)
+    else
+        matrix g = ratios'
+    endif
+
+    if rows(g)!=n
+        printf "\nThe number of variance ratios must equal the number of regressors.\nPlease correct.\n\n"
+        funcerr
+    endif
+
+    matrix g0     = g
+
+    # The following matrices are created here and handed over as constants
+    # to the criterion function to avoid repeated calculation.
+
+    matrix X      = makeX(x,T)
+    matrix XX     = X'X
+    matrix Xy     = X'y
+    matrix P      = makeP(T,n)
+    matrix bounds = makeBounds(&g,n)
+    printf "\n"
+
+    # find variance ratios g that maximize the criterion function Crit
+    set max_verbose off
+
+    scalar C = BFGScmax(&g, bounds, Crit(&g,X,XX,y,Xy,P,T,n,like))
+
+    printf "\r"
+    flush
+
+    # estimation of variance ratios g finished, prepare output
+
+    strings names = varnames(L)
+    matrix M =XX
+    matrix G=zeros(n,n)
+    G[diag]= 1 ./ g
+    G=I(T-1)**G
+    matrix M += qform(P',G)
+    matrix iM = inv(M)
+    matrix a=iM*Xy
+    matrix u=y-X*a
+    matrix v=P*a
+    scalar Q=(u'u+qform(v',G))
+    scalar s=Q/(T-n)
+    matrix b =diag(iM)
+    b= s*b
+    matrix b=sqrt(b)
+    string covariance=strsub($pkgdir, sprintf("\\"), "/")
+    covariance ~= "/TVCcovariance.csv"
+    mwrite(s*iM, covariance)
+
+    ##########################################################################
+
+    # print result
+
+    printf "\n\nResults of Time-Varying Coefficients Estimation"
+    printf   "\n===============================================\n"
+    printf   "\nDependent variable: %s\nRegressors: ",argname(S)
+    loop i=2..(n+1)
+        printf "%s ",names[i]
+    endloop
+
+    scalar width=20
+    scalar width1=30
+    scalar width2=20
+    scalar precision=4
+    printf "\n\n%*svariances",width1-9," "
+    printf "%*sinitial",width2-7," "
+    printf "%*sfiltered with\n",width2-13," "
+    printf "%*svariance ratios",width1+width2-15," "
+    printf "%*svariance ratios",width2-15," "
+    printf "\nequation%*.*g",width1-8,precision,s
+
+    loop i=1..n
+        width=width1-strlen(names[i+1])-6
+        printf "\ncoeff_%s",names[i+1]
+        printf "%*.*g",width,precision,g[i]*s
+        printf "%*.*g",width2,precision,g0[i]
+        printf "%*.*g",width2,precision,g[i]
+    endloop
+
+    printf "\n"
+
+    matrix coeffs       = vector2matrix(a, L,"coeff_")
+    matrix stderrs      = vector2matrix(b, L,"stderr_")
+
+    matrix ava=ones(T)
+    ava=(1/T)*(coeffs'*ava)
+    printf"\naverage coefficients\n"
+    loop i=2..(n+1)
+        width=20-strlen(names[i])
+        printf "%s%*s%10.4f\n",names[i],width," ",ava[i-1]
+    endloop
+
+    printf "\n"
+    if (!(g0>zeros(n)))
+        loop i=1..n
+            if g0[i]==0
+                printf "\nCoefficient for %s is treated as time-invariant", names[i+1]
+            elif g0[i]<0
+                printf "\nVariance ratio for %s is fixed as %g", names[i+1],abs(g0[i])
+            endif
+        endloop
+        printf "\n"
+    endif
+
+    scalar nparams=1
+    if (!(min(g0)<0))
+        loop i=1..n
+            if g0[i]>0
+                nparams +=2
+            elif g0[i]==0
+                nparams +=1
+            endif
+        endloop
+    endif
+
+    printf "Number of observations: %g\nNumber of regressors: %g\n",T,n
+
+    if (!(min(g0)<0))
+        printf "Number of estimated parameters: %g\n",nparams
+    endif
+
+    if like
+        printf "Estimation method: maximum likelihood estimator\n"
+    else
+        printf "Estimation method: moments estimator\n"
+    endif
+
+    scalar LL = LogLike(x,y,X,P,g,ava,s)
+    printf "Log likelihood: %g",LL
+    printf " (Presupposes Gaussian disturbances throughout.)\n"
+
+    printf "\nCovariance matrix written to \n%s.\n\n", covariance
+    matrix paired = zeros(T,2*n)
+    loop i=1..n
+        paired[,2*i-1]  = coeffs[,i]
+        paired[,2*i]    = stderrs[,i]
+    endloop
+
+    strings names=varnames(L)
+    string vars=""
+    loop i=2..(n+1)
+        vars +="coeff_"
+        vars +=names[i]
+        vars += " "
+        vars +="stderr_"
+        vars +=names[i]
+        vars +=" "
+    endloop
+
+    cnameset(paired,vars)
+    list TVCresult=paired
+
+    if like
+        printf "\tYou have chosen maximum likelihood estimation.\n"
+        printf "\tThis is not recommended because it tends to produce \n"
+        printf "\tcorner solutions - extreme values for the variance \n"
+        printf "\tratios and the variance - in shorter time series.\n\n"
+    endif
+
+    if plt
+        pkg query TVCplots --quiet
+        if nelem($result)
+            include TVCplots.gfn
+            TVCplots(TVCresult,,,,,,0,0)
+        else
+            string msg = "\nThe result cannot be plotted, as TVCplots is not \n"
+            msg ~= "installed. Please install it from the Gretl server.\n\n"
+            printf msg
+        endif
+    endif
+
+    return TVCresult
+end function
