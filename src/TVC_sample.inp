@@ -1,0 +1,28 @@
+set verbose off
+/*
+
+Please click the "Run" command - the third icon in the top row of this 
+window. This loads the function package TVC, opens example data, creates
+a list of the regressors and runs the function TVCestimate.
+
+
+*/   
+include TVC.gfn
+open OkunGer.gdt --frompkg=TVC
+list L   = gGDP intercept
+list results = TVCestimate(dU,L,,0)
+set echo on
+/*
+
+Instructions for calling the graphical user interface (GUI):
+
+1. Go to Gretl's main window and click Model -> Univariate time series 
+   -> Time-varying coefficients (TVC) or click the fx button in the
+   bottom row of Gretl's main window and double-click TVC.
+
+2. Click "Apply". This performs the estimation.
+   
+3. For further instructions and explanations, click "Help" in the 
+   TVC window.
+
+*/

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE gretldata SYSTEM "gretldata.dtd">
+
+<gretldata version="1.4" name="OkunGer" frequency="1" startobs="1978" endobs="2013" type="time-series">
+<description>The data refer to Okun’s Law in Germany. Okun’s law describes the relationship 
+between the change of the logarithm of production gGDP and the change in 
+unemployment dU. The data are taken from the study “On the Time-Varying 
+Relationship Between Unemployment and Output: What shapes it?” by João Tovar 
+Jalles (2018) in the Scottish Journal of Political Economy 66, pp. 605–630. 
+The article covers many countries, Germany among them and illustrates a possible 
+use of the VC method. 
+</description>
+<variables count="3">
+<variable name="dU"
+ label="change of unemployment rate in Germany"
+ displayname="change of unemployment"
+/>
+<variable name="gGDP"
+ label="change of ln(GDP) in Germany"
+ displayname="change of GDP"
+/>
+<variable name="intercept"
+ label="const"
+/>
+</variables>
+<observations count="36" labels="false">
+<obs>-0.471552 0.041377 1 </obs>
+<obs>0.091001 0.012636 1 </obs>
+<obs>1.47257 0.001102 1 </obs>
+<obs>1.90275 -0.007913 1 </obs>
+<obs>1.36502 0.015427 1 </obs>
+<obs>-0.041364 0.027869 1 </obs>
+<obs>0.066183 0.021686 1 </obs>
+<obs>-0.289548 0.023886 1 </obs>
+<obs>0.008273 0.014586 1 </obs>
+<obs>-0.107547 0.036676 1 </obs>
+<obs>-0.945596 0.038383 1 </obs>
+<obs>-0.634117 0.055657 1 </obs>
+<obs>-0.68539 0.048899 1 </obs>
+<obs>1.105 0.014894 1 </obs>
+<obs>1.25833 -0.010199 1 </obs>
+<obs>0.6 0.025017 1 </obs>
+<obs>-0.158333 0.01757 1 </obs>
+<obs>0.675 0.008153 1 </obs>
+<obs>0.741667 0.017678 1 </obs>
+<obs>-0.258333 0.016478 1 </obs>
+<obs>-0.808333 0.017276 1 </obs>
+<obs>-0.625 0.032446 1 </obs>
+<obs>-0.116667 0.016268 1 </obs>
+<obs>0.816667 0.000253 1 </obs>
+<obs>1.08333 -0.003882 1 </obs>
+<obs>0.733333 0.006942 1 </obs>
+<obs>0.691667 0.008397 1 </obs>
+<obs>-1.01667 0.038168 1 </obs>
+<obs>-1.40833 0.033321 1 </obs>
+<obs>-1.18333 0.007986 1 </obs>
+<obs>0.141667 -0.052065 1 </obs>
+<obs>-0.683333 0.039453 1 </obs>
+<obs>-1.075 0.030488 1 </obs>
+<obs>-0.770454 0.009313 1 </obs>
+<obs>0.058518 0.008486 1 </obs>
+<obs>-0.080495 0.013622 1 </obs>
+</observations>
+</gretldata>
