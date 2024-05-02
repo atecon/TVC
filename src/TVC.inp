@@ -1,43 +1,38 @@
-function scalar Crit (matrix *g "variance ratios",
-                      const matrix X "observations",
-                      const matrix XX "matrix X'X",
-                      const matrix y "vector of dependent variable",
-                      const matrix Xy "right-hand side of normal equation",
-                      const matrix P "difference matrix",
-                      const scalar T "number of observations",
-                      const scalar n "number of regressors",
-                      const bool like "likelihood")
+function scalar Crit (matrix *g "variance variance_ratios",
+                      const bundle self)
     # This gives the negatively signed criterion function (equations 3.12 for
     # likelihood and 3.13 for moments estimation), stripped of constants and
-    # re-parametrized in terms of variance ratios and the sum of squares Q
+    # re-parametrized in terms of variance variance_ratios and the sum of squares Q
     # instead of variances, using equation 3.9 -- see Appendix B in the
     # documentation. Default is moments estimation. Likelihood estimation
-    # is performed if the flag "like" is true.
+    # is performed if the flag "use_likelihood" is true.
 
-    matrix M =XX
-    matrix G=zeros(n,n)
-    G[diag]= 1 ./ g
-    G=I(T-1)**G
-    matrix M += qform(P',G)
+    matrix M = self.XX
+    matrix G = zeros(self.n, self.n)
+    G[diag] = 1 ./ self.g
+    G = I(self.T-1)**G
+    matrix M += qform(self.P', G)
 
-    matrix a=M \ Xy
-    matrix u=y-X*a
-    matrix v=P*a
+    matrix a = M \ self.Xy
+    matrix u = self.y - self.X * a
+    matrix v =self.P * a
 
     # Construct criterion, as in equation (3.13), but negatively signed
     # because a maximization (rather than a minimization) routine is
     # employed.
 
-    if like
-        M = qform(P,M)
+    if self.use_likelihood
+        M = qform(self.P, M)
     endif
 
-    scalar crit = -ldet(M)-(T-1)*sum(log(g))-(T-n*!like)*log(u'u+qform(v',G))
+    scalar crit = -ldet(M) - (self.T-1) * sum(log(self.g)) \
+                  -(self.T - self.n * !self.use_likelihood) \
+                  * log(u'u + qform(v', G))
 
     # step monitor prints current state of calculations
-    printf "Variance ratios: "
-    loop i=1..n
-        printf "%10g ",g[i]
+    printf "Variance variance_ratios: "
+    loop i=1..self.n
+        printf "%10g ", g[i]
     endloop
     printf "           \r"
     flush
@@ -45,284 +40,190 @@ function scalar Crit (matrix *g "variance ratios",
     return crit
 end function
 
-function matrix vector2matrix (matrix a,
-                               list L,
-                               string prefix)
-    # write vector of coefficients a to matrix
-    scalar n = nelem(L)-1
-    scalar T = rows(a)/n
-    matrix A= zeros(T,n)
-    loop i=1..(T)
-        loop j = n-1..0 --decr
-            A[i,n-j] = a[n*i-j]
-        endloop
-    endloop
-    return A
-end function
 
 function matrix makeX (const matrix x "regressor matrix",
                        const scalar T "number of obs")
     # create matrix X, see section 2.3
+
     matrix X = {}
+
     loop i=1..T
-        X=diagcat(X,x[i,])
+        X = diagcat(X, x[i,])
     endloop
+
     return X
 end function
 
 function matrix makeP (const scalar T "number of observations",
                        const scalar n "number of regressors")
     # create matrix P, see section 2.3
-    matrix p=zeros(T-1,T)
+
+    matrix p = zeros(T-1, T)
+
     loop i=1..(T-1)
-        p[i,i]=-1
-        p[i,i+1]=1
+        p[i,i] = -1
+        p[i,i+1] = 1
     endloop
     matrix P = p**I(n)
+
     return P
 end function
 
 function matrix makeBounds (matrix *g,
                             const scalar n)
-    #
     # This function creates a matrix "bounds" that that gives
     # rows {i,lb, ub} for each regressor where i is the index
     # of the regressor, lb is the lower bound for the coefficient
     # of the regressor i and ub gives its upper bound of regressor.
     # the matrix is used by the BFGScmax function.
-
-    if rows(g)!=n
-        # check if number of rows of g equals the number of regressors.
-        printf "number of initial variance ratios must be equal to the number"
-        printf "\nof regressors. Please correct.\n\n"
-        funcerr
-    endif
-
     # Determine the matrix bounds using g
 
     matrix bounds = {}
     loop i=1..n
-        if g[i,1]>0
-            bounds |={i,0,$huge}
-        elif g[i,1] ==0
-            bounds |={i,1e-7,1e-7}
-            g[i,1]=1e-7
-        elif g[i,1]<0
-            bounds |={i,-g[i,1],-g[i,1]}
-            g[i,1]=-g[i,1]
+        if g[i,1] > 0
+            bounds |= {i, 0, $huge}
+        elif g[i,1] == 0
+            bounds |= {i, 1e-7, 1e-7}
+            g[i,1] = 1e-7
+        elif g[i,1] < 0
+            bounds |= {i, -g[i,1], -g[i,1]}
+            g[i,1] = -g[i,1]
         endif
     endloop
+
     return bounds
 end function
 
-function scalar LogLike (const matrix x "regressor matrix",
-                         const matrix y "dependent variable",
-                         const matrix X "big regressor matrix",
-                         const matrix P "lag matrix",
-                         const matrix g "variance ratios",
-                         const matrix ava "average coefficients",
-                         const scalar s "variance")
+function scalar LogLike (const bundle self)
     # computes the log-likelihood function eq. (3.10)
-    scalar T=rows(x)
-    scalar n=cols(x)
-    matrix G=zeros(n,n)
-    G[diag]= g
-    G=I(T-1)**G
-    matrix W=X*P'*inv(P*P')
-    W=s*(qform(W,G)+I(T))
-    scalar LL=-(1/2)*(T*(log(2)+log($pi))+ldet(W))
-    LL += -(1/2)*(y-x*ava)'*inv(W)*(y-x*ava)
+
+    scalar T = rows(self.x)
+    scalar n = cols(self.x)
+    matrix G = zeros(self.n, self.n)
+    G[diag] = self.g
+    G = I(self.T-1)**G
+    matrix W = self.X * self.P'inv(self.P*self.P')
+    W = self.s * (qform(W, G) + I(self.T))
+    scalar LL = -0.5 * (self.T * (log(2) + log($pi) ) + ldet(W) )
+
+    matrix m = (self.y - self.x * self.average_coeff)
+    LL += -0.5 * m'inv(W) * m
+
     return LL
 end function
 
 
-function list TVCestimate (series S "dependent variable",
-                           list L "regressors",
-                           matrix ratios[auto] "vector of variance ratios",
-                           bool plt[1] "plot result",
-                           bool like[0] "likelihood instead of moments estimation")
-    set verbose off
+function bundle getDefaults (const int nfeatures)
+    /* Get default values. */
 
-    L = S L
+    bundle self = empty
 
-    if sum(missing(L))
-        printf "\nSome observations have missing values. \nPlease correct.\n\n"
-        funcerr
-    endif
+    matrix self.g = ones(nfeatures)  # variance ratios
+    scalar self.plot_results = TRUE
+    scalar self.use_likelihood = FALSE
 
-    # Symbols correspond to the symbols used in in Schlicht (2021),
-    # Journal of the Korean Statistical  Society 50, 1164–1196.
-    # URL: https://doi.org/10.1007/s42952-021-00110-y
-    # Bracketed numbers in comments refer to equation numbers therein.
+    # for printout
+    scalar self.width = 20
+    scalar self.width1 = 30
+    scalar self.width2 = 20
+    scalar self.precision = 4
 
-    matrix y = {L[1]}
-    matrix x = (nelem(L)==2 ? {L[2]} : {L[2:]})
+    return self
+end function
+
+
+function list TVCestimate (series target "dependent variable",
+                           list features "regressors",
+                           const bundle opts[null])
+    /*
+
+    Symbols correspond to the symbols used in in Schlicht (2021),
+    Journal of the Korean Statistical  Society 50, 1164–1196.
+    URL: https://doi.org/10.1007/s42952-021-00110-y
+    Bracketed numbers in comments refer to equation numbers therein.
+
+    */
+
+    list TargetFeatures = target features
+
+    errorif(sum(missing(TargetFeatures)) == TRUE,
+            "Some observations have missing values. \nPlease correct.")
+
+    matrix y = {target}
+    matrix x = {features}
     scalar T = rows(x)
     scalar n = cols(x)
 
-    if !exists(ratios)
-        matrix g = ones(n)
-    else
-        matrix g = ratios'
+    bundle self = getDefaults(n)
+    if exists(opts)
+        bundle self = opts + self
     endif
 
-    if rows(g)!=n
-        printf "\nThe number of variance ratios must equal the number of regressors.\nPlease correct.\n\n"
-        funcerr
-    endif
+    self.y = y
+    self.x = x
+    self.T = T
+    self.n = n
+    self.g = vec(self.g)
 
-    matrix g0     = g
+    errorif(nelem(self.g) != self.n,
+            sprintf("The number of variance variance_ratios must equal the\n\
+                    number of regressors. Please correct."))
 
+    string self.target_name = argname(target)
+    strings self.feature_names = varnames(features)
+
+    matrix self.g0 = self.g
+    matrix g = self.g
     # The following matrices are created here and handed over as constants
     # to the criterion function to avoid repeated calculation.
 
-    matrix X      = makeX(x,T)
-    matrix XX     = X'X
-    matrix Xy     = X'y
-    matrix P      = makeP(T,n)
-    matrix bounds = makeBounds(&g,n)
-    printf "\n"
+    matrix self.X      = makeX(self.x, self.T)   # observations
+    matrix self.XX     = self.X'self.X
+    matrix self.Xy     = self.X'self.y      # right-hand side of normal equation
+    matrix self.P      = makeP(self.T, self.n)   # difference matrix
+    matrix self.bounds = makeBounds(&g, self.n)
 
-    # find variance ratios g that maximize the criterion function Crit
+    # find variance variance_ratios g that maximize the criterion function Crit
     set max_verbose off
-
-    scalar C = BFGScmax(&g, bounds, Crit(&g,X,XX,y,Xy,P,T,n,like))
-
+    printf "\n"
+    scalar C = BFGScmax(&g, self.bounds, Crit(&g, self))
+    self.g = g
     printf "\r"
     flush
+    # estimation of variance variance_ratios g finished
 
-    # estimation of variance ratios g finished, prepare output
-
-    strings names = varnames(L)
-    matrix M =XX
-    matrix G=zeros(n,n)
-    G[diag]= 1 ./ g
-    G=I(T-1)**G
-    matrix M += qform(P',G)
+    # prepare output
+    matrix M = self.XX
+    matrix G = zeros(self.n, self.n)
+    G[diag] = 1 ./ self.g
+    G = I(self.T - 1) ** G
+    matrix M += qform(self.P', G)
     matrix iM = inv(M)
-    matrix a=iM*Xy
-    matrix u=y-X*a
-    matrix v=P*a
-    scalar Q=(u'u+qform(v',G))
-    scalar s=Q/(T-n)
-    matrix b =diag(iM)
-    b= s*b
-    matrix b=sqrt(b)
-    string covariance=strsub($pkgdir, sprintf("\\"), "/")
-    covariance ~= "/TVCcovariance.csv"
-    mwrite(s*iM, covariance)
+    matrix self.coeff = iM * self.Xy    # point estimates aka coefficient
+    matrix u = self.y - self.X * self.coeff
+    matrix v = self.P * self.coeff
+    scalar Q = u'u + qform(v', G)
+    scalar self.s = Q / (self.T - self.n)  # variance
+    self.stderr = self.s * diag(iM)
+    self.stderr = sqrt(self.stderr)        # standard errors
+    self.vcv = self.s * iM
+
+    matrix self.coeff = mshape(self.coeff, self.n, self.T)'
+    matrix self.stderr = mshape(self.stderr, self.n, self.T)'
+    matrix self.average_coeff = meanc(self.coeff)'
+
+    cnameset(self.coeff, self.feature_names)
+    cnameset(self.stderr, self.feature_names)
+    rnameset(self.average_coeff, self.feature_names)
+
+    scalar self.LL = LogLike(self)
 
     ##########################################################################
 
-    # print result
+    print_results(self)
 
-    printf "\n\nResults of Time-Varying Coefficients Estimation"
-    printf   "\n===============================================\n"
-    printf   "\nDependent variable: %s\nRegressors: ",argname(S)
-    loop i=2..(n+1)
-        printf "%s ",names[i]
-    endloop
-
-    scalar width=20
-    scalar width1=30
-    scalar width2=20
-    scalar precision=4
-    printf "\n\n%*svariances",width1-9," "
-    printf "%*sinitial",width2-7," "
-    printf "%*sfiltered with\n",width2-13," "
-    printf "%*svariance ratios",width1+width2-15," "
-    printf "%*svariance ratios",width2-15," "
-    printf "\nequation%*.*g",width1-8,precision,s
-
-    loop i=1..n
-        width=width1-strlen(names[i+1])-6
-        printf "\ncoeff_%s",names[i+1]
-        printf "%*.*g",width,precision,g[i]*s
-        printf "%*.*g",width2,precision,g0[i]
-        printf "%*.*g",width2,precision,g[i]
-    endloop
-
-    printf "\n"
-
-    matrix coeffs       = vector2matrix(a, L,"coeff_")
-    matrix stderrs      = vector2matrix(b, L,"stderr_")
-
-    matrix ava=ones(T)
-    ava=(1/T)*(coeffs'*ava)
-    printf"\naverage coefficients\n"
-    loop i=2..(n+1)
-        width=20-strlen(names[i])
-        printf "%s%*s%10.4f\n",names[i],width," ",ava[i-1]
-    endloop
-
-    printf "\n"
-    if (!(g0>zeros(n)))
-        loop i=1..n
-            if g0[i]==0
-                printf "\nCoefficient for %s is treated as time-invariant", names[i+1]
-            elif g0[i]<0
-                printf "\nVariance ratio for %s is fixed as %g", names[i+1],abs(g0[i])
-            endif
-        endloop
-        printf "\n"
-    endif
-
-    scalar nparams=1
-    if (!(min(g0)<0))
-        loop i=1..n
-            if g0[i]>0
-                nparams +=2
-            elif g0[i]==0
-                nparams +=1
-            endif
-        endloop
-    endif
-
-    printf "Number of observations: %g\nNumber of regressors: %g\n",T,n
-
-    if (!(min(g0)<0))
-        printf "Number of estimated parameters: %g\n",nparams
-    endif
-
-    if like
-        printf "Estimation method: maximum likelihood estimator\n"
-    else
-        printf "Estimation method: moments estimator\n"
-    endif
-
-    scalar LL = LogLike(x,y,X,P,g,ava,s)
-    printf "Log likelihood: %g",LL
-    printf " (Presupposes Gaussian disturbances throughout.)\n"
-
-    printf "\nCovariance matrix written to \n%s.\n\n", covariance
-    matrix paired = zeros(T,2*n)
-    loop i=1..n
-        paired[,2*i-1]  = coeffs[,i]
-        paired[,2*i]    = stderrs[,i]
-    endloop
-
-    strings names=varnames(L)
-    string vars=""
-    loop i=2..(n+1)
-        vars +="coeff_"
-        vars +=names[i]
-        vars += " "
-        vars +="stderr_"
-        vars +=names[i]
-        vars +=" "
-    endloop
-
-    cnameset(paired,vars)
-    list TVCresult=paired
-
-    if like
-        printf "\tYou have chosen maximum likelihood estimation.\n"
-        printf "\tThis is not recommended because it tends to produce \n"
-        printf "\tcorner solutions - extreme values for the variance \n"
-        printf "\tratios and the variance - in shorter time series.\n\n"
-    endif
-
-    if plt
+    # FIXME: Why got this outsourced?
+    if self.plot_results
         pkg query TVCplots --quiet
         if nelem($result)
             include TVCplots.gfn
@@ -334,5 +235,122 @@ function list TVCestimate (series S "dependent variable",
         endif
     endif
 
-    return TVCresult
+    return self
+end function
+
+
+function void print_results (const bundle self)
+    /* code description
+    return: type, description */
+
+
+    printf "\n\nResults of Time-Varying Coefficients Estimation"
+    printf "\n===============================================\n"
+    printf "\nDependent variable: %s\n", self.target_name
+
+    printf "Regressors: "
+    loop foreach i self.feature_names
+        printf "%s ", "$i"
+    endloop
+
+    printf "\n\n%*svariances", (self.width1 - 9), " "
+    printf "%*sinitial", (self.width2 - 7) , " "
+    printf "%*sfiltered with\n", (self.width2 - 13), " "
+    printf "%*svariance variance_ratios", (self.width1 + self.width2 - 15), " "
+    printf "%*svariance variance_ratios", (self.width2 - 15), " "
+    printf "\nequation%*.*g", (self.width1 - 8), self.precision, self.s
+
+    loop i=1..self.n
+        width = self.width1 - strlen(self.feature_names[i]) - 6
+        printf "\ncoeff_%s", self.feature_names[i]
+        printf "%*.*g", width, self.precision, self.g[i] * self.s
+        printf "%*.*g", self.width2, self.precision, self.g0[i]
+        printf "%*.*g", self.width2, self.precision, self.g[i]
+    endloop
+    printf "\n"
+
+    printf"\naverage coefficients\n"
+    loop foreach i self.feature_names
+        width = 20 - strlen(self.feature_names[i])
+        printf "%s%*s%10.4f\n", self.feature_names[i], width, " ",
+            self.average_coeff[i]
+    endloop
+
+
+    printf "\n"
+    if (!(self.g0 > zeros(self.n)))  # TODO: Is this condition correcz?
+        loop i=1..self.n
+            if self.g0[i] == 0
+                printf "\nCoefficient for %s is treated as time-invariant",
+                    self.feature_names[i]
+            elif self.g0[i] < 0
+                printf "\nVariance ratio for %s is fixed as %g",
+                    self.feature_names[i], abs(self.g0[i])
+            endif
+        endloop
+        printf "\n"
+    endif
+
+    scalar nparams = 1
+    if (!(min(self.g0) < 0))
+        loop i=1..self.n
+            if self.g0[i] > 0
+                nparams += 2
+            elif self.g0[i] == 0
+                nparams += 1
+            endif
+        endloop
+    endif
+
+    printf "Number of observations: %g\nNumber of regressors: %g\n",
+        self.T, self.n
+
+    if (!(min(self.g0) < 0))
+        printf "Number of estimated parameters: %g\n", nparams
+    endif
+
+    if self.use_likelihood
+        printf "Estimation method: maximum likelihood estimator\n"
+    else
+        printf "Estimation method: moments estimator\n"
+    endif
+    printf "Log likelihood: %g", self.LL
+    printf " (Presupposes Gaussian disturbances throughout.)\n"
+
+    if self.use_likelihood
+        printf "\tYou have chosen maximum likelihood estimation.\n"
+        printf "\tThis is not recommended because it tends to produce \n"
+        printf "\tcorner solutions - extreme values for the variance \n"
+        printf "\tratios and the variance - in shorter time series.\n\n"
+    endif
+end function
+
+
+# TODO: Finish this public function
+function list get_tv_coefflist (const bundle self)
+    /* code description
+    return: type, description */
+
+    matrix paired = zeros(self.T, 2*self.n)
+    loop i=1..self.n
+        paired[,2*i-1]  = self.coeff[,i]
+        paired[,2*i]    = self.stderr[,i]
+    endloop
+
+    # TODO: Not needed here. Create separate function for retrieving ths
+    string vars = ""
+    loop i=2..(self.n + 1)
+        vars +="coeff_"
+        vars +=feature_names[i]
+        vars += " "
+        vars +="stderr_"
+        vars +=feature_names[i]
+        vars +=" "
+    endloop
+
+    cnameset(paired, vars)
+    list Ret = paired
+
+
+     return Ret
 end function
