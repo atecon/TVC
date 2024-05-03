@@ -263,58 +263,93 @@ function void plotTVC (const bundle self)
             printf msg
         endif
     endif
+end function
 
-    return self
+
+function list getTVCcoeffs (const bundle self,
+                            string prefix[null])
+    /* Retrieve the time-varying coefficient estimates from a Gretl model.
+
+    Parameters:
+    self (bundle): The Gretl model object.
+    prefix (string, optional): A prefix to be added to the names of the
+        output series. If not provided, no prefix will be used.
+
+    Returns:
+    list: A list of Gretl series containing the time-varying coefficient
+        estimates. The series names will be constructed by concatenating
+        the provided prefix (if any) and the parameter names from the
+        Gretl model.
+    */
+
+    string prefix = exists(prefix) ? prefix : ""
+    list Ret = empty
+
+    loop i=1..self.ncoeff
+        list Ret += genseries(sprintf("%s%s", prefix, self.parnames[i]),
+                              self.coeff[,i])
+    endloop
+
+    return Ret
+end function
+
+
+
+function void cleanup_bundle (bundle *self)
+    /* Remove some of the bundle items. */
+
+    delete self.precision
+    delete self.width
+    delete self.width1
+    delete self.width2
 end function
 
 
 function void print_results (const bundle self)
-    /* code description
-    return: type, description */
-
+    /* Print estimation results. */
 
     printf "\n\nResults of Time-Varying Coefficients Estimation"
     printf "\n===============================================\n"
-    printf "\nDependent variable: %s\n", self.target_name
+    printf "\nDependent variable: %s\n", self.depvar
 
     printf "Regressors: "
-    loop foreach i self.feature_names
+    loop foreach i self.parnames
         printf "%s ", "$i"
     endloop
 
     printf "\n\n%*svariances", (self.width1 - 9), " "
     printf "%*sinitial", (self.width2 - 7) , " "
     printf "%*sfiltered with\n", (self.width2 - 13), " "
-    printf "%*svariance variance_ratios", (self.width1 + self.width2 - 15), " "
-    printf "%*svariance variance_ratios", (self.width2 - 15), " "
-    printf "\nequation%*.*g", (self.width1 - 8), self.precision, self.s
+    printf "%*svariance ratios", (self.width1 + self.width2 - 15), " "
+    printf "%*svariance ratios", (self.width2 - 15), " "
+    printf "\nequation%*.*g", (self.width1 - 8), self.precision, self.sigma
 
-    loop i=1..self.n
-        width = self.width1 - strlen(self.feature_names[i]) - 6
-        printf "\ncoeff_%s", self.feature_names[i]
-        printf "%*.*g", width, self.precision, self.g[i] * self.s
+    loop foreach i self.parnames
+        width = self.width1 - strlen(self.parnames[i])
+        printf "\n%s", "$i"
+        printf "%*.*g", width, self.precision, self.g[i] * self.sigma
         printf "%*.*g", self.width2, self.precision, self.g0[i]
         printf "%*.*g", self.width2, self.precision, self.g[i]
     endloop
     printf "\n"
 
     printf"\naverage coefficients\n"
-    loop foreach i self.feature_names
-        width = 20 - strlen(self.feature_names[i])
-        printf "%s%*s%10.4f\n", self.feature_names[i], width, " ",
-            self.average_coeff[i]
+    loop foreach i self.parnames
+        width = 20 - strlen(self.parnames[i])
+        printf "%s%*s%10.4f\n", self.parnames[i], width, " ",
+            self.coeff_average[i]
     endloop
 
 
     printf "\n"
-    if (!(self.g0 > zeros(self.n)))  # TODO: Is this condition correcz?
-        loop i=1..self.n
+    if (!(self.g0 > zeros(self.ncoeff)))  # TODO: Is this condition correcz?
+        loop i=1..self.ncoeff
             if self.g0[i] == 0
                 printf "\nCoefficient for %s is treated as time-invariant",
-                    self.feature_names[i]
+                    self.parnames[i]
             elif self.g0[i] < 0
                 printf "\nVariance ratio for %s is fixed as %g",
-                    self.feature_names[i], abs(self.g0[i])
+                    self.parnames[i], abs(self.g0[i])
             endif
         endloop
         printf "\n"
@@ -322,7 +357,7 @@ function void print_results (const bundle self)
 
     scalar nparams = 1
     if (!(min(self.g0) < 0))
-        loop i=1..self.n
+        loop i=1..self.ncoeff
             if self.g0[i] > 0
                 nparams += 2
             elif self.g0[i] == 0
