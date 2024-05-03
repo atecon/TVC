@@ -57,6 +57,7 @@ Symbols correspond to the symbols used in in Schlicht (2021), Journal of the Kor
 URL: https://doi.org/10.1007/s42952-021-00110-y
 Bracketed numbers in comments refer to equation numbers therein.
 */
+set max_verbose off
 
 list TargetFeatures = target features
 errorif(sum(missing(TargetFeatures)) &gt; FALSE, &quot;Some observations have missing values. \nPlease correct.&quot;)
@@ -94,12 +95,8 @@ matrix P = makeP(self.T, self.ncoeff)   # difference matrix
 matrix bounds = makeBounds(&amp;g, self.ncoeff)
 
 # find variance variance_ratios g that maximize the criterion function Crit
-#set max_verbose off
-printf &quot;\n&quot;
-scalar C = BFGScmax(&amp;g, bounds, Crit(&amp;g, X, XX, y, Xy, P, self.T, self.ncoeff, self.use_likelihood))
+scalar C = BFGScmax(&amp;g, bounds, Crit(&amp;g, X, XX, y, Xy, P, self.T, self.ncoeff, self.use_likelihood, self.print_details))
 self.g = g
-printf &quot;\r&quot;
-flush
 
 # prepare output
 matrix M = XX
@@ -220,7 +217,7 @@ TVCplots(Input,,,,,,0,0)
 </code>
 </gretl-function>
 <gretl-function name="Crit" type="scalar" private="1">
- <params count="9">
+ <params count="10">
   <param name="g" type="matrixref">
 <description>variance ratios</description>
   </param>
@@ -248,6 +245,7 @@ TVCplots(Input,,,,,,0,0)
   <param name="use_likelihood" type="bool" const="true">
 <description>likelihood</description>
   </param>
+  <param name="print_details" type="bool" default="0" const="true"/>
  </params>
 <code># This gives the negatively signed criterion function (equations 3.12 for
 # likelihood and 3.13 for moments estimation), stripped of constants and
@@ -276,13 +274,15 @@ endif
 
 scalar crit = -ldet(M) - (T-1) * sum(log(g)) -(T - n * !use_likelihood) * log(u'u + qform(v', G))
 
-# step monitor prints current state of calculations
-printf &quot;Variance variance_ratios: &quot;
-loop i=1..n
-  printf &quot;%10g &quot;, g[i]
-endloop
-printf &quot;           \r&quot;
-flush
+if print_details
+  # step monitor prints current state of calculations
+  printf &quot;Variance variance_ratios: &quot;
+  loop i=1..n
+    printf &quot;%10g &quot;, g[i]
+  endloop
+  printf &quot;           \r&quot;
+  flush
+endif
 
 return crit
 </code>
@@ -403,6 +403,7 @@ scalar self.plot_results = TRUE
 scalar self.use_likelihood = FALSE
 
 # for printout
+scalar self.print_details = FALSE
 scalar self.silent = FALSE
 scalar self.width = 20
 scalar self.width1 = 30

@@ -6,7 +6,8 @@ function scalar Crit (matrix *g "variance ratios",
                       const matrix P "difference matrix",
                       const scalar T "number of observations",
                       const scalar n "number of regressors",
-                      const bool use_likelihood "likelihood")
+                      const bool use_likelihood "likelihood",
+                      const bool print_details[FALSE])
 
     # This gives the negatively signed criterion function (equations 3.12 for
     # likelihood and 3.13 for moments estimation), stripped of constants and
@@ -37,13 +38,15 @@ function scalar Crit (matrix *g "variance ratios",
                   -(T - n * !use_likelihood) \
                   * log(u'u + qform(v', G))
 
-    # step monitor prints current state of calculations
-    printf "Variance variance_ratios: "
-    loop i=1..n
-        printf "%10g ", g[i]
-    endloop
-    printf "           \r"
-    flush
+    if print_details
+        # step monitor prints current state of calculations
+        printf "Variance variance_ratios: "
+        loop i=1..n
+            printf "%10g ", g[i]
+        endloop
+        printf "           \r"
+        flush
+    endif
 
     return crit
 end function
@@ -135,6 +138,7 @@ function bundle getDefaults (const int nfeatures "number regressors")
     scalar self.use_likelihood = FALSE
 
     # for printout
+    scalar self.print_details = FALSE
     scalar self.silent = FALSE
     scalar self.width = 20
     scalar self.width1 = 30
@@ -155,6 +159,7 @@ function bundle TVCestimate (series target "dependent variable",
     URL: https://doi.org/10.1007/s42952-021-00110-y
     Bracketed numbers in comments refer to equation numbers therein.
     */
+    set max_verbose off
 
     list TargetFeatures = target features
     errorif(sum(missing(TargetFeatures)) > FALSE,
@@ -196,13 +201,9 @@ function bundle TVCestimate (series target "dependent variable",
     matrix bounds = makeBounds(&g, self.ncoeff)
 
     # find variance variance_ratios g that maximize the criterion function Crit
-    #set max_verbose off
-    printf "\n"
     scalar C = BFGScmax(&g, bounds, Crit(&g, X, XX, y, Xy, P, self.T, self.ncoeff,
-                                         self.use_likelihood))
+                                         self.use_likelihood, self.print_details))
     self.g = g
-    printf "\r"
-    flush
 
     # prepare output
     matrix M = XX
