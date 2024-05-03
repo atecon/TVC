@@ -177,7 +177,7 @@ function bundle TVCestimate (series target "dependent variable",
     matrix self.g = vec(self.g)
 
     errorif(rows(self.g) != self.ncoeff,
-            sprintf("The number of variance variance_ratios must equal the\n\
+            sprintf("The number of variance variance_ratios must equal the \n\
                     number of regressors. Please correct."))
 
     string self.depvar = argname(target)
@@ -252,6 +252,7 @@ function void plotTVC (const bundle self, const string filename[null])
     /* Wrapper function calling TVCplots package. */
 
     list Input = empty  # bhat(x1)~stderr(x1)~bhat(x2)~stderr(x2)~...
+    smpl self.t1 self.t2  # catch eventual missing values
 
     loop i=1..self.ncoeff
         Input += genseries(sprintf("b_%s", self.parnames[i]), self.coeff[,i])
@@ -279,6 +280,7 @@ function list getTVCcoeffs (const bundle self,
 
     string prefix = exists(prefix) ? prefix : ""
     list Ret = empty
+    smpl self.t1 self.t2  # catch eventual missing values
 
     loop i=1..self.ncoeff
         list Ret += genseries(sprintf("%s%s", prefix, self.parnames[i]),
@@ -305,6 +307,7 @@ function list getTVCstderr (const bundle self,
 
     string prefix = exists(prefix) ? prefix : "stderr_"
     list Ret = empty
+    smpl self.t1 self.t2  # catch eventual missing values
 
     loop i=1..self.ncoeff
         list Ret += genseries(sprintf("%s%s", prefix, self.parnames[i]),

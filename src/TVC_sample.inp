@@ -12,11 +12,12 @@ open OkunGer.gdt --frompkg=TVC
 list L = const gGDP
 
 # Use default values for estimation
+smpl dU L --no-missing
 bundle Model = TVCestimate(dU, L)
 print Model
 
-plotTVC(Model)
 
+plotTVC(Model)
 # Retrieve time-varying coefficients as series
 list Coeffs = getTVCcoeffs(Model, "beta_")  # add optionally prefix 'beta_'
 # Plot series
@@ -26,7 +27,6 @@ tsplots Coeffs --output=display
 list Stderr = getTVCstderr(Model)
 # Plot series
 tsplots Stderr --output=display
-
 
 
 # Alternatively: provide some own parameters

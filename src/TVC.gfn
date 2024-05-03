@@ -59,7 +59,7 @@ Bracketed numbers in comments refer to equation numbers therein.
 */
 
 list TargetFeatures = target features
-errorif(sum(missing(TargetFeatures)) == TRUE, &quot;Some observations have missing values. \nPlease correct.&quot;)
+errorif(sum(missing(TargetFeatures)) &gt; FALSE, &quot;Some observations have missing values. \nPlease correct.&quot;)
 
 matrix y = {target}
 matrix x = {features}
@@ -77,7 +77,7 @@ scalar self.t2 = $t2
 scalar self.ncoeff = n
 matrix self.g = vec(self.g)
 
-errorif(rows(self.g) != self.ncoeff, sprintf(&quot;The number of variance variance_ratios must equal the\n                     number of regressors. Please correct.&quot;))
+errorif(rows(self.g) != self.ncoeff, sprintf(&quot;The number of variance variance_ratios must equal the \n                     number of regressors. Please correct.&quot;))
 
 string self.depvar = argname(target)
 strings self.parnames = varnames(features)
@@ -163,6 +163,7 @@ the provided prefix (if any) and the series names.
 
 string prefix = exists(prefix) ? prefix : &quot;&quot;
 list Ret = empty
+smpl self.t1 self.t2  # catch eventual missing values
 
 loop i=1..self.ncoeff
   list Ret += genseries(sprintf(&quot;%s%s&quot;, prefix, self.parnames[i]), self.coeff[,i])
@@ -191,6 +192,7 @@ the provided or default prefix and the series names.
 
 string prefix = exists(prefix) ? prefix : &quot;stderr_&quot;
 list Ret = empty
+smpl self.t1 self.t2  # catch eventual missing values
 
 loop i=1..self.ncoeff
   list Ret += genseries(sprintf(&quot;%s%s&quot;, prefix, self.parnames[i]), self.stderr[,i])
@@ -207,6 +209,7 @@ return Ret
 <code>/* Wrapper function calling TVCplots package. */
 
 list Input = empty  # bhat(x1)~stderr(x1)~bhat(x2)~stderr(x2)~...
+smpl self.t1 self.t2  # catch eventual missing values
 
 loop i=1..self.ncoeff
   Input += genseries(sprintf(&quot;b_%s&quot;, self.parnames[i]), self.coeff[,i])
@@ -516,13 +519,17 @@ open OkunGer.gdt --frompkg=TVC
 
 # list of regressors
 list L = const gGDP
+smpl obs &lt;= 2 --restrict  # insert some initial missing values
+series gGDP = NA
+smpl full
 
 # Use default values for estimation
+smpl dU L --no-missing
 bundle Model = TVCestimate(dU, L)
 print Model
+smpl full
 
 plotTVC(Model)
-
 # Retrieve time-varying coefficients as series
 list Coeffs = getTVCcoeffs(Model, &quot;beta_&quot;)  # add optionally prefix 'beta_'
 # Plot series
@@ -532,7 +539,6 @@ tsplots Coeffs --output=display
 list Stderr = getTVCstderr(Model)
 # Plot series
 tsplots Stderr --output=display
-
 
 
 # Alternatively: provide some own parameters
