@@ -157,7 +157,7 @@ function bundle TVCestimate (series target "dependent variable",
     */
 
     list TargetFeatures = target features
-    errorif(sum(missing(TargetFeatures)) == TRUE,
+    errorif(sum(missing(TargetFeatures)) > FALSE,
             "Some observations have missing values. \nPlease correct.")
 
     matrix y = {target}
