@@ -1,23 +1,21 @@
 set verbose off
 /*
-
 Please click the "Run" command - the third icon in the top row of this 
 window. This loads the function package TVC, opens example data, creates
 a list of the regressors and runs the function TVCestimate.
-
-
 */   
 
-include "/home/artur/git/TVC/src/TVC.inp" --force
-open "/home/artur/git/TVC/data/OkunGer.gdt"
-#include TVC.gfn
-#open OkunGer.gdt --frompkg=TVC
+include TVC.gfn
+open OkunGer.gdt --frompkg=TVC
 
-list L = gGDP  intercept
+# list of regressors
+list L = const gGDP
 
-# Use default values
+# Use default values for estimation
 bundle Model = TVCestimate(dU, L)
 print Model
+
+plotTVC(Model)
 
 # Retrieve time-varying coefficients as series
 list Coeffs = getTVCcoeffs(Model, "beta_")  # add optionally prefix 'beta_'
