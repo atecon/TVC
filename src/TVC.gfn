@@ -519,15 +519,12 @@ open OkunGer.gdt --frompkg=TVC
 
 # list of regressors
 list L = const gGDP
-smpl obs &lt;= 2 --restrict  # insert some initial missing values
-series gGDP = NA
-smpl full
 
 # Use default values for estimation
 smpl dU L --no-missing
 bundle Model = TVCestimate(dU, L)
 print Model
-smpl full
+
 
 plotTVC(Model)
 # Retrieve time-varying coefficients as series
