@@ -13,9 +13,9 @@ open "/home/artur/git/TVC/data/OkunGer.gdt"
 #include TVC.gfn
 #open OkunGer.gdt --frompkg=TVC
 
-list L = gGDP intercept
+list L = gGDP  intercept
 
-/*
+# Use default values
 bundle Model = TVCestimate(dU, L)
 print Model
 
@@ -28,7 +28,8 @@ tsplots Coeffs --output=display
 list Stderr = getTVCstderr(Model)
 # Plot series
 tsplots Stderr --output=display
-*/
+
+
 
 # Alternatively: provide some own parameters
 bundle Params = _(g = {0,1}, use_likelihood = TRUE, silent = TRUE)
