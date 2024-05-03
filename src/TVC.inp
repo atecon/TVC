@@ -77,6 +77,7 @@ function matrix makeP (const scalar T "number of observations",
     return P
 end function
 
+
 function matrix makeBounds (matrix *g,
                             const scalar n)
     # This function creates a matrix "bounds" that that gives
@@ -268,7 +269,7 @@ end function
 
 function list getTVCcoeffs (const bundle self,
                             string prefix[null])
-    /* Retrieve the time-varying coefficient estimates from a Gretl model.
+    /* Retrieve the time-varying coefficient estimates.
 
     Parameters:
     self (bundle): The Gretl model object.
@@ -278,8 +279,7 @@ function list getTVCcoeffs (const bundle self,
     Returns:
     list: A list of Gretl series containing the time-varying coefficient
         estimates. The series names will be constructed by concatenating
-        the provided prefix (if any) and the parameter names from the
-        Gretl model.
+        the provided prefix (if any) and the series names.
     */
 
     string prefix = exists(prefix) ? prefix : ""
@@ -293,7 +293,31 @@ function list getTVCcoeffs (const bundle self,
     return Ret
 end function
 
+function list getTVCstderr (const bundle self,
+                            string prefix[null])
+    /* Retrieve the time-varying standard error.
 
+    Parameters:
+    self (bundle): The Gretl model object.
+    prefix (string, optional): A prefix to be added to the names of the
+        output series. If not provided, prefix "stderr_" will be used.
+
+    Returns:
+    list: A list of Gretl series containing the time-varying standard
+        errors. The series names will be constructed by concatenating
+        the provided or default prefix and the series names.
+    */
+
+    string prefix = exists(prefix) ? prefix : "stderr_"
+    list Ret = empty
+
+    loop i=1..self.ncoeff
+        list Ret += genseries(sprintf("%s%s", prefix, self.parnames[i]),
+                              self.stderr[,i])
+    endloop
+
+    return Ret
+end function
 
 function void cleanup_bundle (bundle *self)
     /* Remove some of the bundle items. */
