@@ -1,0 +1,559 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gretl-functions>
+<gretl-function-package name="TVC" needs-time-series-data="true" minver="2023c" lives-in-subdir="true">
+<author email="TVC@econ.lmu.de">Ekkehart Schlicht</author>
+<version>3.0</version>
+<date>2024-05-03</date>
+<description>Regression with Time-varying coefficients (TVC)</description>
+<tags>C22</tags>
+<label>Time-varying coefficients (TVC)</label>
+<menu-attachment>MAINWIN/Model/TSModels</menu-attachment>
+<help>
+pdfdoc:TVC.pdf
+</help>
+<gui-help filename="TVC_help.md">
+**This function estimates a linear regression with time-varying coefficients** 
+
+It has the following arguments:
+
+*dependent variable*: Enter the name of the time series 
+
+*regressors*:  Create a list of names of the regressors.
+
+*vector of variance ratios*: A vector of variance ratios in the form
+{*r1,r2,... rn*} - one ratio for each regressor in the list of regressors. 
+
+If a variance ratio is positive, iteration starts with this value; if it is zero, the respective coefficient is taken as time-invariant; if it is negative, its absolute value determines the fixed variance ratio for the respective regressor. 
+
+The default is *[auto]* - the coefficients for all regressors are taken as time-varying. Their variance ratios (which reflect their variability) are estimated, and all initial variance ratios are taken as *1*.
+
+*plot result*: If this checkbox is checked, the result is plotted. This requires that the function package TVCplots is installed. 
+
+-If not installed, go to Gretl's main window and select *Files -&gt; Function packages -&gt; on server -&gt; TVCplots*, right-click on &quot;Install&quot; and confirm menu attachment.
+
+-If installed, go to Gretl's main window and select *View -&gt; Multiple Graphs -&gt; Time series with confidence bands (TVC)* to configure plot appearance.
+  
+*likelihood estimation instead of moments estimation*: If this checkbox is checked, likelihood estimation rather than moments estimation will be performed. (Not recommended.)
+</gui-help>
+<data-files count="1">
+OkunGer.gdt </data-files>
+<depends count="1">
+TVCplots </depends>
+<gretl-function name="TVCestimate" type="bundle" pkg-role="gui-main">
+ <params count="3">
+  <param name="target" type="series">
+<description>dependent variable</description>
+  </param>
+  <param name="features" type="list">
+<description>regressors</description>
+  </param>
+  <param name="opts" type="bundle" optional="true" const="true">
+<description>Options</description>
+  </param>
+ </params>
+<code>/* Main function for estimating the model.
+
+Symbols correspond to the symbols used in in Schlicht (2021), Journal of the Korean Statistical Society 50, 1164–1196.
+URL: https://doi.org/10.1007/s42952-021-00110-y
+Bracketed numbers in comments refer to equation numbers therein.
+*/
+
+list TargetFeatures = target features
+errorif(sum(missing(TargetFeatures)) == TRUE, &quot;Some observations have missing values. \nPlease correct.&quot;)
+
+matrix y = {target}
+matrix x = {features}
+scalar T = rows(x)
+scalar n = cols(x)
+
+bundle self = getDefaults(n)
+if exists(opts)
+  bundle self = opts + self
+endif
+
+scalar self.T = T
+scalar self.t1 = $t1
+scalar self.t2 = $t2
+scalar self.ncoeff = n
+matrix self.g = vec(self.g)
+
+errorif(rows(self.g) != self.ncoeff, sprintf(&quot;The number of variance variance_ratios must equal the\n                     number of regressors. Please correct.&quot;))
+
+string self.depvar = argname(target)
+strings self.parnames = varnames(features)
+
+matrix self.g0 = self.g  # g0: initial variance
+matrix g = self.g        # filtered variance
+# The following matrices are created here and handed over as constants
+# to the criterion function to avoid repeated calculation.
+
+matrix X = makeX(x, self.T)   # observations
+matrix XX = X'X
+matrix Xy = X'y               # right-hand side of normal equation
+matrix P = makeP(self.T, self.ncoeff)   # difference matrix
+matrix bounds = makeBounds(&amp;g, self.ncoeff)
+
+# find variance variance_ratios g that maximize the criterion function Crit
+#set max_verbose off
+printf &quot;\n&quot;
+scalar C = BFGScmax(&amp;g, bounds, Crit(&amp;g, X, XX, y, Xy, P, self.T, self.ncoeff, self.use_likelihood))
+self.g = g
+printf &quot;\r&quot;
+flush
+
+# prepare output
+matrix M = XX
+matrix G = zeros(self.ncoeff, self.ncoeff)
+G[diag] = 1 ./ self.g
+G = I(self.T - 1) ** G
+matrix M += qform(P', G)
+matrix iM = inv(M)
+matrix self.coeff = iM * Xy            # point estimates
+matrix u = y - X * self.coeff
+matrix v = P * self.coeff
+scalar Q = u'u + qform(v', G)
+scalar self.sigma = Q / (self.T - self.ncoeff)  # variance
+self.stderr = self.sigma * diag(iM)
+self.stderr = sqrt(self.stderr)        # standard errors
+self.vcv = self.sigma * iM
+
+matrix self.coeff = mshape(self.coeff, self.ncoeff, self.T)'
+matrix self.stderr = mshape(self.stderr, self.ncoeff, self.T)'
+matrix self.coeff_average = meanc(self.coeff)'
+cnameset(self.coeff, self.parnames)
+cnameset(self.stderr, self.parnames)
+rnameset(self.coeff_average, self.parnames)
+
+scalar self.lnl = LogLike(self, x, y, X, P)
+
+# Create and add to bundle fitted in-sample values and residuals
+series self.yhat_average = lincomb(features, self.coeff_average)
+series self.yhat = sumr(x .* self.coeff)
+series self.uhat = target - self.yhat
+series self.uhat_average = target - self.yhat_average
+scalar self.ess = sst(self.uhat)
+scalar self.rsq = mcorr({self.yhat, target})[1,2]^2
+
+if self.silent == FALSE
+  print_results(self)
+endif
+
+cleanup_bundle(&amp;self)
+
+return self
+</code>
+</gretl-function>
+<gretl-function name="getTVCcoeffs" type="list">
+ <params count="2">
+  <param name="self" type="bundle" const="true"/>
+  <param name="prefix" type="string" optional="true"/>
+ </params>
+<code>/* Retrieve the time-varying coefficient estimates.
+
+Parameters:
+self (bundle): The Gretl model object.
+prefix (string, optional): A prefix to be added to the names of the
+output series. If not provided, no prefix will be used.
+
+Returns:
+list: A list of Gretl series containing the time-varying coefficient
+estimates. The series names will be constructed by concatenating
+the provided prefix (if any) and the series names.
+*/
+
+string prefix = exists(prefix) ? prefix : &quot;&quot;
+list Ret = empty
+
+loop i=1..self.ncoeff
+  list Ret += genseries(sprintf(&quot;%s%s&quot;, prefix, self.parnames[i]), self.coeff[,i])
+endloop
+
+return Ret
+</code>
+</gretl-function>
+<gretl-function name="getTVCstderr" type="list">
+ <params count="2">
+  <param name="self" type="bundle" const="true"/>
+  <param name="prefix" type="string" optional="true"/>
+ </params>
+<code>/* Retrieve the time-varying standard error.
+
+Parameters:
+self (bundle): The Gretl model object.
+prefix (string, optional): A prefix to be added to the names of the
+output series. If not provided, prefix &quot;stderr_&quot; will be used.
+
+Returns:
+list: A list of Gretl series containing the time-varying standard
+errors. The series names will be constructed by concatenating
+the provided or default prefix and the series names.
+*/
+
+string prefix = exists(prefix) ? prefix : &quot;stderr_&quot;
+list Ret = empty
+
+loop i=1..self.ncoeff
+  list Ret += genseries(sprintf(&quot;%s%s&quot;, prefix, self.parnames[i]), self.stderr[,i])
+endloop
+
+return Ret
+</code>
+</gretl-function>
+<gretl-function name="plotTVC" type="void">
+ <params count="2">
+  <param name="self" type="bundle" const="true"/>
+  <param name="filename" type="string" optional="true" const="true"/>
+ </params>
+<code>/* Wrapper function calling TVCplots package. */
+
+list Input = empty  # bhat(x1)~stderr(x1)~bhat(x2)~stderr(x2)~...
+
+loop i=1..self.ncoeff
+  Input += genseries(sprintf(&quot;b_%s&quot;, self.parnames[i]), self.coeff[,i])
+  Input += genseries(sprintf(&quot;stderr_%s&quot;, self.parnames[i]), self.stderr[,i])
+endloop
+
+TVCplots(Input,,,,,,0,0)
+</code>
+</gretl-function>
+<gretl-function name="Crit" type="scalar" private="1">
+ <params count="9">
+  <param name="g" type="matrixref">
+<description>variance ratios</description>
+  </param>
+  <param name="X" type="matrix" const="true">
+<description>observations</description>
+  </param>
+  <param name="XX" type="matrix" const="true">
+<description>matrix X'X</description>
+  </param>
+  <param name="y" type="matrix" const="true">
+<description>vector of dependent variable</description>
+  </param>
+  <param name="Xy" type="matrix" const="true">
+<description>right-hand side of normal equation</description>
+  </param>
+  <param name="P" type="matrix" const="true">
+<description>difference matrix</description>
+  </param>
+  <param name="T" type="scalar" const="true">
+<description>number of observations</description>
+  </param>
+  <param name="n" type="scalar" const="true">
+<description>number of regressors</description>
+  </param>
+  <param name="use_likelihood" type="bool" const="true">
+<description>likelihood</description>
+  </param>
+ </params>
+<code># This gives the negatively signed criterion function (equations 3.12 for
+# likelihood and 3.13 for moments estimation), stripped of constants and
+# re-parametrized in terms of variance variance_ratios and the sum of squares Q
+# instead of variances, using equation 3.9 -- see Appendix B in the
+# documentation. Default is moments estimation. Likelihood estimation
+# is performed if the flag &quot;use_likelihood&quot; is true.
+
+matrix M = XX
+matrix G = zeros(n, n)
+G[diag] = 1 ./ g
+G = I(T-1)**G
+matrix M += qform(P', G)
+
+matrix a = M \ Xy
+matrix u = y - X * a
+matrix v =P * a
+
+# Construct criterion, as in equation (3.13), but negatively signed
+# because a maximization (rather than a minimization) routine is
+# employed.
+
+if use_likelihood
+  M = qform(P, M)
+endif
+
+scalar crit = -ldet(M) - (T-1) * sum(log(g)) -(T - n * !use_likelihood) * log(u'u + qform(v', G))
+
+# step monitor prints current state of calculations
+printf &quot;Variance variance_ratios: &quot;
+loop i=1..n
+  printf &quot;%10g &quot;, g[i]
+endloop
+printf &quot;           \r&quot;
+flush
+
+return crit
+</code>
+</gretl-function>
+<gretl-function name="makeX" type="matrix" private="1">
+ <params count="2">
+  <param name="x" type="matrix" const="true">
+<description>regressor matrix</description>
+  </param>
+  <param name="T" type="scalar" const="true">
+<description>number of obs</description>
+  </param>
+ </params>
+<code># create matrix X, see section 2.3
+
+matrix X = {}
+
+loop i=1..T
+  X = diagcat(X, x[i,])
+endloop
+
+return X
+</code>
+</gretl-function>
+<gretl-function name="makeP" type="matrix" private="1">
+ <params count="2">
+  <param name="T" type="scalar" const="true">
+<description>number of observations</description>
+  </param>
+  <param name="n" type="scalar" const="true">
+<description>number of regressors</description>
+  </param>
+ </params>
+<code># create matrix P, see section 2.3
+
+matrix p = zeros(T-1, T)
+
+loop i=1..(T-1)
+  p[i,i] = -1
+  p[i,i+1] = 1
+endloop
+matrix P = p**I(n)
+
+return P
+</code>
+</gretl-function>
+<gretl-function name="makeBounds" type="matrix" private="1">
+ <params count="2">
+  <param name="g" type="matrixref"/>
+  <param name="n" type="scalar" const="true"/>
+ </params>
+<code># This function creates a matrix &quot;bounds&quot; that that gives
+# rows {i,lb, ub} for each regressor where i is the index
+# of the regressor, lb is the lower bound for the coefficient
+# of the regressor i and ub gives its upper bound of regressor.
+# the matrix is used by the BFGScmax function.
+# Determine the matrix bounds using g
+
+matrix bounds = {}
+loop i=1..n
+  if g[i,1] &gt; 0
+    bounds |= {i, 0, $huge}
+  elif g[i,1] == 0
+    bounds |= {i, 1e-7, 1e-7}
+    g[i,1] = 1e-7
+  elif g[i,1] &lt; 0
+    bounds |= {i, -g[i,1], -g[i,1]}
+    g[i,1] = -g[i,1]
+  endif
+endloop
+
+return bounds
+</code>
+</gretl-function>
+<gretl-function name="LogLike" type="scalar" private="1">
+ <params count="5">
+  <param name="self" type="bundle" const="true"/>
+  <param name="x" type="matrix" const="true">
+<description>regressor matrix</description>
+  </param>
+  <param name="y" type="matrix" const="true">
+<description>dependent variable</description>
+  </param>
+  <param name="X" type="matrix" const="true">
+<description>big regressor matrix</description>
+  </param>
+  <param name="P" type="matrix" const="true">
+<description>lag matrix</description>
+  </param>
+ </params>
+<code># computes the log-likelihood function eq. (3.10)
+
+matrix G = zeros(self.ncoeff, self.ncoeff)
+G[diag] = self.g
+G = I(self.T-1)**G
+matrix W = X * P'inv(P*P')
+W = self.sigma * (qform(W, G) + I(self.T))
+scalar LL = -0.5 * (self.T * (log(2) + log($pi) ) + ldet(W) )
+
+matrix m = (y - x * self.coeff_average)
+LL += -0.5 * m'inv(W) * m
+
+return LL
+</code>
+</gretl-function>
+<gretl-function name="getDefaults" type="bundle" private="1">
+ <params count="1">
+  <param name="nfeatures" type="int" const="true">
+<description>number regressors</description>
+  </param>
+ </params>
+<code>/* Get default values. */
+
+bundle self = empty
+
+matrix self.g = ones(nfeatures)  # variance ratios
+scalar self.plot_results = TRUE
+scalar self.use_likelihood = FALSE
+
+# for printout
+scalar self.silent = FALSE
+scalar self.width = 20
+scalar self.width1 = 30
+scalar self.width2 = 20
+scalar self.precision = 4
+
+return self
+</code>
+</gretl-function>
+<gretl-function name="cleanup_bundle" type="void" private="1">
+ <params count="1">
+  <param name="self" type="bundleref"/>
+ </params>
+<code>/* Remove some of the bundle items. */
+
+delete self.precision
+delete self.width
+delete self.width1
+delete self.width2
+</code>
+</gretl-function>
+<gretl-function name="print_results" type="void" private="1">
+ <params count="1">
+  <param name="self" type="bundle" const="true"/>
+ </params>
+<code>/* Print estimation results. */
+
+printf &quot;\n\nResults of Time-Varying Coefficients Estimation&quot;
+printf &quot;\n===============================================\n&quot;
+printf &quot;\nDependent variable: %s\n&quot;, self.depvar
+
+printf &quot;Regressors: &quot;
+loop foreach i self.parnames
+  printf &quot;%s &quot;, &quot;$i&quot;
+endloop
+
+printf &quot;\n\n%*svariances&quot;, (self.width1 - 9), &quot; &quot;
+printf &quot;%*sinitial&quot;, (self.width2 - 7) , &quot; &quot;
+printf &quot;%*sfiltered with\n&quot;, (self.width2 - 13), &quot; &quot;
+printf &quot;%*svariance ratios&quot;, (self.width1 + self.width2 - 15), &quot; &quot;
+printf &quot;%*svariance ratios&quot;, (self.width2 - 15), &quot; &quot;
+printf &quot;\nequation%*.*g&quot;, (self.width1 - 8), self.precision, self.sigma
+
+loop foreach i self.parnames
+  width = self.width1 - strlen(self.parnames[i])
+  printf &quot;\n%s&quot;, &quot;$i&quot;
+  printf &quot;%*.*g&quot;, width, self.precision, self.g[i] * self.sigma
+  printf &quot;%*.*g&quot;, self.width2, self.precision, self.g0[i]
+  printf &quot;%*.*g&quot;, self.width2, self.precision, self.g[i]
+endloop
+printf &quot;\n&quot;
+
+printf&quot;\naverage coefficients\n&quot;
+loop foreach i self.parnames
+  width = 20 - strlen(self.parnames[i])
+  printf &quot;%s%*s%10.4f\n&quot;, self.parnames[i], width, &quot; &quot;, self.coeff_average[i]
+endloop
+
+printf &quot;\n&quot;
+if (!(self.g0 &gt; zeros(self.ncoeff)))  # TODO: Is this condition correcz?
+  loop i=1..self.ncoeff
+    if self.g0[i] == 0
+      printf &quot;\nCoefficient for %s is treated as time-invariant&quot;, self.parnames[i]
+    elif self.g0[i] &lt; 0
+      printf &quot;\nVariance ratio for %s is fixed as %g&quot;, self.parnames[i], abs(self.g0[i])
+    endif
+  endloop
+  printf &quot;\n&quot;
+endif
+
+scalar nparams = 1
+if (!(min(self.g0) &lt; 0))
+  loop i=1..self.ncoeff
+    if self.g0[i] &gt; 0
+      nparams += 2
+    elif self.g0[i] == 0
+      nparams += 1
+    endif
+  endloop
+endif
+
+printf &quot;Number of observations: %g\nNumber of regressors: %g\n&quot;, self.T, self.ncoeff
+
+if (!(min(self.g0) &lt; 0))
+  printf &quot;Number of estimated parameters: %g\n&quot;, nparams
+endif
+
+if self.use_likelihood
+  printf &quot;Estimation method: maximum likelihood estimator\n&quot;
+else
+  printf &quot;Estimation method: moments estimator\n&quot;
+endif
+printf &quot;Log likelihood: %g&quot;, self.lnl
+printf &quot; (Presupposes Gaussian disturbances throughout.)\n&quot;
+
+if self.use_likelihood
+  printf &quot;\tYou have chosen maximum likelihood estimation.\n&quot;
+  printf &quot;\tThis is not recommended because it tends to produce \n&quot;
+  printf &quot;\tcorner solutions - extreme values for the variance \n&quot;
+  printf &quot;\tratios and the variance - in shorter time series.\n\n&quot;
+endif
+</code>
+</gretl-function>
+<sample-script>
+set verbose off
+/*
+Please click the &quot;Run&quot; command - the third icon in the top row of this 
+window. This loads the function package TVC, opens example data, creates
+a list of the regressors and runs the function TVCestimate.
+*/   
+
+include TVC.gfn
+open OkunGer.gdt --frompkg=TVC
+
+# list of regressors
+list L = const gGDP
+
+# Use default values for estimation
+bundle Model = TVCestimate(dU, L)
+print Model
+
+plotTVC(Model)
+
+# Retrieve time-varying coefficients as series
+list Coeffs = getTVCcoeffs(Model, &quot;beta_&quot;)  # add optionally prefix 'beta_'
+# Plot series
+tsplots Coeffs --output=display
+
+# Retrieve time-varying std. errors as series
+list Stderr = getTVCstderr(Model)
+# Plot series
+tsplots Stderr --output=display
+
+
+
+# Alternatively: provide some own parameters
+bundle Params = _(g = {0,1}, use_likelihood = TRUE, silent = TRUE)
+bundle Model2 = TVCestimate(dU, L, Params)
+print Model2
+print Model2.coeff  # Print matrix of coefficient estimates
+
+
+/*
+Instructions for calling the graphical user interface (GUI):
+
+1. Go to Gretl's main window and click Model -&gt; Univariate time series 
+   -&gt; Time-varying coefficients (TVC) or click the fx button in the
+   bottom row of Gretl's main window and double-click TVC.
+
+2. Click &quot;Apply&quot;. This performs the estimation.
+   
+3. For further instructions and explanations, click &quot;Help&quot; in the 
+   TVC window.
+*/
+</sample-script>
+</gretl-function-package>
+</gretl-functions>
