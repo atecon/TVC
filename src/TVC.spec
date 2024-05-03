@@ -1,7 +1,7 @@
 author = Ekkehart Schlicht
 email = TVC@econ.lmu.de
-version = 2.0
-date = 2023-12-21
+version = 3.0
+date = 2024-05-03
 description = Regression with Time-varying coefficients (TVC)
 tags = C22
 min-version = 2023c

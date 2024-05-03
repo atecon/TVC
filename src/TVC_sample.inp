@@ -7,13 +7,37 @@ a list of the regressors and runs the function TVCestimate.
 
 
 */   
-include TVC.gfn
-open OkunGer.gdt --frompkg=TVC
-list L   = gGDP intercept
-list results = TVCestimate(dU,L,,0)
-set echo on
-/*
 
+include "/home/artur/git/TVC/src/TVC.inp" --force
+open "/home/artur/git/TVC/data/OkunGer.gdt"
+#include TVC.gfn
+#open OkunGer.gdt --frompkg=TVC
+
+list L = gGDP intercept
+
+/*
+bundle Model = TVCestimate(dU, L)
+print Model
+
+# Retrieve time-varying coefficients as series
+list Coeffs = getTVCcoeffs(Model, "beta_")  # add optionally prefix 'beta_'
+# Plot series
+tsplots Coeffs --output=display
+
+# Retrieve time-varying std. errors as series
+list Stderr = getTVCstderr(Model)
+# Plot series
+tsplots Stderr --output=display
+*/
+
+# Alternatively: provide some own parameters
+bundle Params = _(g = {0,1}, use_likelihood = TRUE, silent = TRUE)
+bundle Model2 = TVCestimate(dU, L, Params)
+print Model2
+print Model2.coeff  # Print matrix of coefficient estimates
+
+
+/*
 Instructions for calling the graphical user interface (GUI):
 
 1. Go to Gretl's main window and click Model -> Univariate time series 
@@ -24,5 +48,4 @@ Instructions for calling the graphical user interface (GUI):
    
 3. For further instructions and explanations, click "Help" in the 
    TVC window.
-
 */
