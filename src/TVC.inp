@@ -247,23 +247,18 @@ function bundle TVCestimate (series target "dependent variable",
 end function
 
 
-function void plotTVC (const bundle self)
-    /* code description
-    return: type, description */
+# TODO: Make plot storeable
+function void plotTVC (const bundle self, const string filename[null])
+    /* Wrapper function calling TVCplots package. */
 
-    # FIXME: Why got this outsourced?
+    list Input = empty  # bhat(x1)~stderr(x1)~bhat(x2)~stderr(x2)~...
 
-    if self.plot_results
-        pkg query TVCplots --quiet
-        if nelem($result)
-            include TVCplots.gfn
-            TVCplots(TVCresult,,,,,,0,0)
-        else
-            string msg = "\nThe result cannot be plotted, as TVCplots is not \n"
-            msg ~= "installed. Please install it from the Gretl server.\n\n"
-            printf msg
-        endif
-    endif
+    loop i=1..self.ncoeff
+        Input += genseries(sprintf("b_%s", self.parnames[i]), self.coeff[,i])
+        Input += genseries(sprintf("stderr_%s", self.parnames[i]), self.stderr[,i])
+    endloop
+
+    TVCplots(Input,,,,,,0,0)
 end function
 
 
